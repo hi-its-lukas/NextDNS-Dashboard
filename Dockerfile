@@ -8,7 +8,8 @@ COPY docker-requirements.txt .
 RUN pip install --no-cache-dir -r docker-requirements.txt
 
 COPY app.py .
-COPY .streamlit .streamlit
+RUN mkdir -p .streamlit
+COPY .streamlit/docker-config.toml .streamlit/config.toml
 
 EXPOSE 5050
 

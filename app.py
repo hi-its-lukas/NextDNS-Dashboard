@@ -31,7 +31,23 @@ TIME_RANGES = {
     'Last 7 days': timedelta(days=7),
     'Last 14 days': timedelta(days=14),
     'Last 30 days': timedelta(days=30),
+    'Last 6 months': timedelta(days=180),
+    'Last 12 months': timedelta(days=365),
+    'Last 24 months': timedelta(days=730),
 }
+
+CREDENTIALS_FILE = 'nextdns_credentials.json'
+
+def load_credentials():
+    try:
+        with open(CREDENTIALS_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {'api_key': '', 'profile_id': ''}
+
+def save_credentials(api_key, profile_id):
+    with open(CREDENTIALS_FILE, 'w') as f:
+        json.dump({'api_key': api_key, 'profile_id': profile_id}, f)
 
 def classify_gafam(domain):
     if not domain:
@@ -58,9 +74,8 @@ def fetch_logs_by_time(api_key, profile_id, from_date, to_date=None):
     
     all_logs = []
     cursor = None
-    max_logs = 50000
     
-    while len(all_logs) < max_logs:
+    while True:
         params = {'limit': 500}
         if from_date:
             params['from'] = from_date.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -216,13 +231,22 @@ def filter_by_time(df, time_filter):
     
     return df
 
+saved_creds = load_credentials()
+
 with st.sidebar:
     st.title("🔒 NextDNS Analytics")
     st.markdown("---")
     
     st.subheader("API Configuration")
-    api_key = st.text_input("API Key", type="password", help="Find your API key at my.nextdns.io/account")
-    profile_id = st.text_input("Profile ID", help="Your NextDNS profile ID (e.g., abc123)")
+    api_key = st.text_input("API Key", value=saved_creds.get('api_key', ''), type="password", help="Find your API key at my.nextdns.io/account")
+    profile_id = st.text_input("Profile ID", value=saved_creds.get('profile_id', ''), help="Your NextDNS profile ID (e.g., abc123)")
+    
+    if st.button("💾 Save Credentials", use_container_width=True):
+        if api_key and profile_id:
+            save_credentials(api_key, profile_id)
+            st.success("Credentials saved!")
+        else:
+            st.warning("Please enter both API Key and Profile ID")
     
     st.markdown("---")
     

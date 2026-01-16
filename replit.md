@@ -69,5 +69,7 @@ streamlit run app.py --server.port 5000
 - Main endpoint: `GET /profiles/{profile_id}/logs`
 
 ## Recent Changes
+- 2026-01-16: Added extended time ranges (6, 12, 24 months) and credential persistence
+- 2026-01-16: Changed from log count to time-based data fetching (no limit on log count)
 - 2026-01-16: Added Docker support (Dockerfile, docker-compose.yml)
 - 2026-01-16: Initial implementation with all core features

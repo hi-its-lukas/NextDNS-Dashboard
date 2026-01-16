@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  nextdns-dashboard:
+    build: .
+    container_name: nextdns-analytics
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    environment:
+      - STREAMLIT_SERVER_PORT=5000
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0

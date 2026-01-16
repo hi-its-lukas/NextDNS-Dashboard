@@ -24,11 +24,34 @@ A Python/Streamlit web application that connects to the NextDNS API to fetch, an
 ├── app.py                    # Main Streamlit application
 ├── .streamlit/
 │   └── config.toml          # Streamlit configuration (dark theme)
-├── pyproject.toml           # Python dependencies
+├── Dockerfile               # Docker configuration
+├── docker-compose.yml       # Docker Compose configuration
+├── docker-requirements.txt  # Python dependencies for Docker
+├── pyproject.toml           # Python dependencies (Replit)
 └── replit.md                # This file
 ```
 
-## Running the Application
+## Running on Docker Desktop
+
+### Option 1: Docker Compose (Recommended)
+```bash
+docker-compose up --build
+```
+Then open http://localhost:5000 in your browser.
+
+### Option 2: Docker Build & Run
+```bash
+docker build -t nextdns-dashboard .
+docker run -p 5000:5000 nextdns-dashboard
+```
+Then open http://localhost:5000 in your browser.
+
+### Stop the Container
+```bash
+docker-compose down
+```
+
+## Running on Replit
 The app runs on port 5000 using the command:
 ```
 streamlit run app.py --server.port 5000
@@ -46,4 +69,5 @@ streamlit run app.py --server.port 5000
 - Main endpoint: `GET /profiles/{profile_id}/logs`
 
 ## Recent Changes
+- 2026-01-16: Added Docker support (Dockerfile, docker-compose.yml)
 - 2026-01-16: Initial implementation with all core features

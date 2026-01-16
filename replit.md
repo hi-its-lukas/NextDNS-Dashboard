@@ -37,14 +37,14 @@ A Python/Streamlit web application that connects to the NextDNS API to fetch, an
 ```bash
 docker-compose up --build
 ```
-Then open http://localhost:5000 in your browser.
+Then open http://localhost:5050 in your browser.
 
 ### Option 2: Docker Build & Run
 ```bash
 docker build -t nextdns-dashboard .
-docker run -p 5000:5000 nextdns-dashboard
+docker run -p 5050:5050 nextdns-dashboard
 ```
-Then open http://localhost:5000 in your browser.
+Then open http://localhost:5050 in your browser.
 
 ### Stop the Container
 ```bash

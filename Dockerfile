@@ -10,9 +10,9 @@ RUN pip install --no-cache-dir -r docker-requirements.txt
 COPY app.py .
 COPY .streamlit .streamlit
 
-EXPOSE 5000
+EXPOSE 5050
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/_stcore/health || exit 1
+    CMD curl -f http://localhost:5050/_stcore/health || exit 1
 
-CMD ["streamlit", "run", "app.py", "--server.port=5000", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app.py", "--server.port=5050", "--server.address=0.0.0.0"]

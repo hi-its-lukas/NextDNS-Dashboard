@@ -4,8 +4,110 @@ import plotly.express as px
 import plotly.graph_objects as go
 import requests
 import json
+import os
 from datetime import datetime, timedelta
 import pytz
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+def init_database():
+    if not DATABASE_URL:
+        return False
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS credentials (
+                    id SERIAL PRIMARY KEY,
+                    api_key TEXT NOT NULL,
+                    profile_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS dns_logs (
+                    id SERIAL PRIMARY KEY,
+                    profile_id TEXT NOT NULL,
+                    log_data JSONB NOT NULL,
+                    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    time_range TEXT
+                )
+            '''))
+            conn.execute(text('''
+                CREATE INDEX IF NOT EXISTS idx_logs_profile ON dns_logs(profile_id)
+            '''))
+            conn.commit()
+        return True
+    except SQLAlchemyError as e:
+        st.error(f"Database error: {e}")
+        return False
+
+def save_credentials_db(api_key, profile_id):
+    if not DATABASE_URL:
+        return False
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            conn.execute(text('DELETE FROM credentials'))
+            conn.execute(text(
+                'INSERT INTO credentials (api_key, profile_id) VALUES (:api_key, :profile_id)'
+            ), {'api_key': api_key, 'profile_id': profile_id})
+            conn.commit()
+        return True
+    except SQLAlchemyError:
+        return False
+
+def load_credentials_db():
+    if not DATABASE_URL:
+        return {'api_key': '', 'profile_id': ''}
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            result = conn.execute(text('SELECT api_key, profile_id FROM credentials ORDER BY id DESC LIMIT 1'))
+            row = result.fetchone()
+            if row:
+                return {'api_key': row[0], 'profile_id': row[1]}
+    except SQLAlchemyError:
+        pass
+    return {'api_key': '', 'profile_id': ''}
+
+def save_logs_db(profile_id, logs, time_range):
+    if not DATABASE_URL or not logs:
+        return False
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            conn.execute(text(
+                'DELETE FROM dns_logs WHERE profile_id = :profile_id'
+            ), {'profile_id': profile_id})
+            conn.execute(text(
+                'INSERT INTO dns_logs (profile_id, log_data, time_range) VALUES (:profile_id, :log_data, :time_range)'
+            ), {'profile_id': profile_id, 'log_data': json.dumps(logs), 'time_range': time_range})
+            conn.commit()
+        return True
+    except SQLAlchemyError as e:
+        st.error(f"Error saving logs: {e}")
+        return False
+
+def load_logs_db(profile_id):
+    if not DATABASE_URL:
+        return None, None, None
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            result = conn.execute(text(
+                'SELECT log_data, fetched_at, time_range FROM dns_logs WHERE profile_id = :profile_id ORDER BY fetched_at DESC LIMIT 1'
+            ), {'profile_id': profile_id})
+            row = result.fetchone()
+            if row:
+                return json.loads(row[0]), row[1], row[2]
+    except SQLAlchemyError:
+        pass
+    return None, None, None
+
+db_initialized = init_database()
 
 st.set_page_config(
     page_title="NextDNS Advanced Analytics",
@@ -301,7 +403,7 @@ def filter_by_time(df, time_filter):
     
     return df
 
-saved_creds = load_credentials()
+saved_creds = load_credentials_db() if db_initialized else load_credentials()
 
 with st.sidebar:
     st.title("🔒 NextDNS Analytics")
@@ -313,8 +415,15 @@ with st.sidebar:
     
     if st.button("💾 Save Credentials", use_container_width=True):
         if api_key and profile_id:
-            save_credentials(api_key, profile_id)
-            st.success("Credentials saved!")
+            if db_initialized:
+                if save_credentials_db(api_key, profile_id):
+                    st.success("Credentials saved to database!")
+                else:
+                    save_credentials(api_key, profile_id)
+                    st.success("Credentials saved locally!")
+            else:
+                save_credentials(api_key, profile_id)
+                st.success("Credentials saved!")
         else:
             st.warning("Please enter both API Key and Profile ID")
     
@@ -331,7 +440,8 @@ with st.sidebar:
     
     st.markdown("---")
     
-    fetch_button = st.button("📊 Fetch Data", type="primary", use_container_width=True)
+    fetch_button = st.button("📊 Fetch New Data", type="primary", use_container_width=True)
+    load_cached_button = st.button("📂 Load Saved Data", use_container_width=True)
     
     if st.button("🗑️ Clear Cache", use_container_width=True):
         st.cache_data.clear()
@@ -358,6 +468,26 @@ if fetch_button:
                 st.session_state.logs_data = logs
                 st.session_state.error = None
                 st.session_state.fetch_time_range = time_range
+                st.session_state.data_source = 'api'
+                if db_initialized and logs:
+                    save_logs_db(profile_id, logs, time_range)
+                    st.success(f"Fetched {len(logs):,} logs and saved to database!")
+
+if load_cached_button:
+    if not profile_id:
+        st.error("Please enter Profile ID to load saved data")
+    else:
+        with st.spinner("Loading saved data from database..."):
+            logs, fetched_at, saved_time_range = load_logs_db(profile_id)
+            if logs:
+                st.session_state.logs_data = logs
+                st.session_state.error = None
+                st.session_state.fetch_time_range = saved_time_range or 'Unknown'
+                st.session_state.data_source = 'database'
+                st.session_state.fetched_at = fetched_at
+                st.success(f"Loaded {len(logs):,} logs from database (saved: {fetched_at.strftime('%d.%m.%Y %H:%M') if fetched_at else 'Unknown'})")
+            else:
+                st.warning("No saved data found for this profile. Please fetch new data first.")
 
 if st.session_state.error:
     st.error(f"Error: {st.session_state.error}")

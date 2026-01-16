@@ -15,11 +15,65 @@ st.set_page_config(
 )
 
 GAFAM_DOMAINS = {
-    'google': ['google', 'googleapis', 'gstatic', 'youtube', 'googlevideo', 'ggpht', 'googleusercontent', 'gvt1', 'gvt2', 'doubleclick', 'googlesyndication', 'googleadservices'],
-    'apple': ['apple', 'icloud', 'mzstatic', 'apple-cloudkit', 'cdn-apple'],
-    'meta': ['facebook', 'fbcdn', 'instagram', 'whatsapp', 'fb', 'meta'],
-    'amazon': ['amazon', 'amazonaws', 'cloudfront', 'alexa', 'prime'],
-    'microsoft': ['microsoft', 'msn', 'bing', 'azure', 'office', 'live', 'outlook', 'skype', 'xbox', 'windows', 'msftconnecttest', 'msedge']
+    'google': [
+        'google', 'googleapis', 'gstatic', 'youtube', 'googlevideo', 'ggpht', 
+        'googleusercontent', 'gvt1', 'gvt2', 'gvt3', 'doubleclick', 'googlesyndication', 
+        'googleadservices', 'googleanalytics', 'googletag', 'googleoptimize',
+        'gmail', 'goog', 'chromium', 'android', 'blogger', 'blogspot',
+        'firebase', 'firebaseio', 'googlecloud', 'gcr.io', 'withgoogle',
+        'googleplex', 'googlezip', 'gmodules', 'feedburner', 'admob',
+        'crashlytics', 'appspot', 'googledomains', 'google-analytics',
+        'ytimg', 'yt3.ggpht', 'youtu.be', 'youtube-nocookie'
+    ],
+    'apple': [
+        'apple', 'icloud', 'mzstatic', 'apple-cloudkit', 'cdn-apple',
+        'itunes', 'appstore', 'apple.news', 'apple.com', 'aaplimg',
+        'push.apple', 'siri', 'applemusic', 'icloud-content',
+        'me.com', 'mac.com', 'apple-dns', 'swcdn.apple', 'ls.apple',
+        'gs.apple', 'ess.apple', 'configuration.apple', 'certs.apple',
+        'valid.apple', 'ocsp.apple', 'captive.apple', 'airport.apple'
+    ],
+    'meta': [
+        'facebook', 'fbcdn', 'instagram', 'whatsapp', 'fb.com', 'fb.me',
+        'meta', 'messenger', 'fbsbx', 'facebookcorewwwi', 'accountkit',
+        'oculus', 'workplace', 'fbpigeon', 'facebookmail', 'tfbnw',
+        'fburl', 'cdninstagram', 'threads.net', 'ig.me'
+    ],
+    'amazon': [
+        'amazon', 'amazonaws', 'cloudfront', 'alexa', 'prime',
+        'aws', 'awsstatic', 'elasticbeanstalk', 'elasticache',
+        'amazonvideo', 'amazonpay', 'primevideo', 'twitch', 'twitchcdn',
+        'twitchsvc', 'audible', 'goodreads', 'kindle', 'ring.com',
+        'amazon-adsystem', 'amazonwebservices', 'awscdn', 's3.amazonaws',
+        'ec2.amazonaws', 'media-amazon', 'ssl-images-amazon', 'images-amazon',
+        'fls-na.amazon', 'unagi.amazon', 'device-metrics-us.amazon'
+    ],
+    'microsoft': [
+        'microsoft', 'msn', 'bing', 'azure', 'office', 'live', 'outlook',
+        'skype', 'xbox', 'windows', 'msftconnecttest', 'msedge',
+        'microsoftonline', 'office365', 'sharepoint', 'onedrive', 'onenote',
+        'linkedin', 'licdn', 'github', 'githubusercontent', 'githubassets',
+        'npmjs', 'visualstudio', 'vsassets', 'azureedge', 'trafficmanager',
+        'windowsupdate', 'msauth', 'msftauth', 'msftstatic', 'msecnd',
+        'microsoftstore', 'ms-acdc', 'sfx.ms', 'aka.ms', 'gfx.ms',
+        'c.bing', 's.bing', 'login.live', 'login.microsoftonline',
+        'teams', 'skypeforbusiness', 'lync', 'yammer', 'dynamics',
+        'azure-dns', 'msocsp', 'digicert', 'verisign.net'
+    ]
+}
+
+OTHER_TECH_COMPANIES = {
+    'netflix': ['netflix', 'nflximg', 'nflxvideo', 'nflxext', 'nflxso'],
+    'spotify': ['spotify', 'scdn', 'spotifycdn', 'spotilocal'],
+    'tiktok': ['tiktok', 'tiktokcdn', 'bytedance', 'byteoversea', 'muscdn', 'musical.ly'],
+    'twitter/x': ['twitter', 'twimg', 'x.com', 't.co', 'tweetdeck'],
+    'snapchat': ['snapchat', 'snapkit', 'snap.com', 'snapads'],
+    'adobe': ['adobe', 'typekit', 'adobecc', 'behance', 'adobelogin'],
+    'salesforce': ['salesforce', 'force.com', 'salesforceliveagent', 'sfdc'],
+    'oracle': ['oracle', 'oraclecloud', 'eloqua', 'bluekai', 'grapeshot'],
+    'ibm': ['ibm', 'bluemix', 'softlayer'],
+    'cloudflare': ['cloudflare', 'cloudflare-dns', 'cloudflareresolve', 'cf-ipfs'],
+    'akamai': ['akamai', 'akamaized', 'akamaihd', 'akadns', 'edgekey', 'edgesuite'],
 }
 
 TIME_RANGES = {
@@ -54,6 +108,20 @@ def classify_gafam(domain):
         return 'Others'
     domain_lower = domain.lower()
     for company, patterns in GAFAM_DOMAINS.items():
+        for pattern in patterns:
+            if pattern in domain_lower:
+                return company.capitalize()
+    return 'Others'
+
+def classify_all_tech(domain):
+    if not domain:
+        return 'Others'
+    domain_lower = domain.lower()
+    for company, patterns in GAFAM_DOMAINS.items():
+        for pattern in patterns:
+            if pattern in domain_lower:
+                return company.capitalize()
+    for company, patterns in OTHER_TECH_COMPANIES.items():
         for pattern in patterns:
             if pattern in domain_lower:
                 return company.capitalize()
@@ -194,9 +262,11 @@ def process_logs(logs, timezone_str='Europe/Berlin'):
         df['domain'] = df[domain_col].fillna('')
         df['root_domain'] = df['domain'].apply(extract_root_domain)
         df['gafam'] = df['domain'].apply(classify_gafam)
+        df['all_tech'] = df['domain'].apply(classify_all_tech)
     else:
         df['domain'] = ''
         df['root_domain'] = ''
+        df['all_tech'] = 'Others'
         df['gafam'] = 'Others'
     
     if 'device' in df.columns:
@@ -573,36 +643,70 @@ with tab3:
 
 with tab4:
     st.subheader("GAFAM & Big Tech Analysis")
-    st.markdown("Breakdown of requests to major tech companies")
+    st.markdown("Detailed breakdown of requests to major tech companies")
     
-    if 'gafam' in df.columns:
+    if 'gafam' in df.columns and 'all_tech' in df.columns:
         gafam_counts = df['gafam'].value_counts()
+        all_tech_counts = df['all_tech'].value_counts()
+        
+        total_queries = len(df)
+        gafam_total = total_queries - gafam_counts.get('Others', 0)
+        gafam_percent = (gafam_total / total_queries * 100) if total_queries > 0 else 0
+        
+        st.markdown("### GAFAM Summary")
+        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+        
+        with kpi1:
+            google_count = gafam_counts.get('Google', 0)
+            google_pct = (google_count / total_queries * 100) if total_queries > 0 else 0
+            st.metric("Google", f"{google_count:,}", f"{google_pct:.1f}%")
+        with kpi2:
+            apple_count = gafam_counts.get('Apple', 0)
+            apple_pct = (apple_count / total_queries * 100) if total_queries > 0 else 0
+            st.metric("Apple", f"{apple_count:,}", f"{apple_pct:.1f}%")
+        with kpi3:
+            meta_count = gafam_counts.get('Meta', 0)
+            meta_pct = (meta_count / total_queries * 100) if total_queries > 0 else 0
+            st.metric("Meta", f"{meta_count:,}", f"{meta_pct:.1f}%")
+        with kpi4:
+            amazon_count = gafam_counts.get('Amazon', 0)
+            amazon_pct = (amazon_count / total_queries * 100) if total_queries > 0 else 0
+            st.metric("Amazon", f"{amazon_count:,}", f"{amazon_pct:.1f}%")
+        with kpi5:
+            microsoft_count = gafam_counts.get('Microsoft', 0)
+            microsoft_pct = (microsoft_count / total_queries * 100) if total_queries > 0 else 0
+            st.metric("Microsoft", f"{microsoft_count:,}", f"{microsoft_pct:.1f}%")
+        
+        st.info(f"**{gafam_percent:.1f}%** of all queries go to GAFAM companies ({gafam_total:,} of {total_queries:,})")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            fig_gafam_pie = px.pie(
-                values=gafam_counts.values,
-                names=gafam_counts.index,
-                title='Request Distribution by Company',
-                hole=0.4,
-                color_discrete_map={
-                    'Google': '#4285F4',
-                    'Apple': '#A2AAAD',
-                    'Meta': '#0668E1',
-                    'Amazon': '#FF9900',
-                    'Microsoft': '#00A4EF',
-                    'Others': '#6B7280'
-                }
-            )
-            fig_gafam_pie.update_layout(template='plotly_dark')
-            st.plotly_chart(fig_gafam_pie, use_container_width=True)
+            gafam_only = gafam_counts[gafam_counts.index != 'Others']
+            if len(gafam_only) > 0:
+                fig_gafam_pie = px.pie(
+                    values=gafam_only.values,
+                    names=gafam_only.index,
+                    title='GAFAM Distribution (excluding Others)',
+                    hole=0.4,
+                    color_discrete_map={
+                        'Google': '#4285F4',
+                        'Apple': '#A2AAAD',
+                        'Meta': '#0668E1',
+                        'Amazon': '#FF9900',
+                        'Microsoft': '#00A4EF'
+                    }
+                )
+                fig_gafam_pie.update_layout(template='plotly_dark')
+                st.plotly_chart(fig_gafam_pie, use_container_width=True)
+            else:
+                st.info("No GAFAM requests found")
         
         with col2:
             fig_gafam_bar = px.bar(
                 x=gafam_counts.index,
                 y=gafam_counts.values,
-                title='Total Requests by Company',
+                title='Total Requests by Category',
                 color=gafam_counts.index,
                 color_discrete_map={
                     'Google': '#4285F4',
@@ -618,8 +722,35 @@ with tab4:
             fig_gafam_bar.update_yaxes(title='Queries')
             st.plotly_chart(fig_gafam_bar, use_container_width=True)
         
+        st.markdown("### Other Tech Companies")
+        other_tech_only = all_tech_counts[~all_tech_counts.index.isin(['Google', 'Apple', 'Meta', 'Amazon', 'Microsoft', 'Others'])]
+        if len(other_tech_only) > 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                fig_other_tech = px.bar(
+                    x=other_tech_only.values,
+                    y=other_tech_only.index,
+                    orientation='h',
+                    title='Other Tech Company Requests',
+                    color_discrete_sequence=['#8B5CF6']
+                )
+                fig_other_tech.update_layout(template='plotly_dark', yaxis={'categoryorder': 'total ascending'})
+                fig_other_tech.update_xaxes(title='Queries')
+                fig_other_tech.update_yaxes(title='')
+                st.plotly_chart(fig_other_tech, use_container_width=True)
+            
+            with col2:
+                other_data = pd.DataFrame({
+                    'Company': other_tech_only.index,
+                    'Queries': other_tech_only.values,
+                    'Percentage': [f"{(v/total_queries*100):.2f}%" for v in other_tech_only.values]
+                })
+                st.dataframe(other_data, use_container_width=True, hide_index=True)
+        else:
+            st.info("No requests to other tracked tech companies detected")
+        
         if 'timestamp' in df.columns and not df['timestamp'].isna().all():
-            st.subheader("GAFAM Requests Over Time")
+            st.markdown("### GAFAM Requests Over Time")
             df_gafam_time = df.copy()
             df_gafam_time['time_bucket'] = df_gafam_time['timestamp'].dt.floor('H')
             
@@ -646,10 +777,14 @@ with tab4:
             )
             st.plotly_chart(fig_gafam_time, use_container_width=True)
         
-        st.subheader("Top Domains by Company")
+        st.markdown("### Top Domains by Company")
         for company in ['Google', 'Apple', 'Meta', 'Amazon', 'Microsoft']:
-            with st.expander(f"{company}"):
-                company_domains = df[df['gafam'] == company]['root_domain'].value_counts().head(10)
+            company_df = df[df['gafam'] == company]
+            company_domains = company_df['root_domain'].value_counts().head(10)
+            company_count = len(company_df)
+            company_pct = (company_count / total_queries * 100) if total_queries > 0 else 0
+            
+            with st.expander(f"{company} - {company_count:,} queries ({company_pct:.1f}%)"):
                 if len(company_domains) > 0:
                     display_data = pd.DataFrame({
                         'Domain': company_domains.index,

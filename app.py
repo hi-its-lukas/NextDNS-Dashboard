@@ -22,6 +22,17 @@ GAFAM_DOMAINS = {
     'microsoft': ['microsoft', 'msn', 'bing', 'azure', 'office', 'live', 'outlook', 'skype', 'xbox', 'windows', 'msftconnecttest', 'msedge']
 }
 
+TIME_RANGES = {
+    'Last 1 hour': timedelta(hours=1),
+    'Last 6 hours': timedelta(hours=6),
+    'Last 12 hours': timedelta(hours=12),
+    'Last 24 hours': timedelta(days=1),
+    'Last 3 days': timedelta(days=3),
+    'Last 7 days': timedelta(days=7),
+    'Last 14 days': timedelta(days=14),
+    'Last 30 days': timedelta(days=30),
+}
+
 def classify_gafam(domain):
     if not domain:
         return 'Others'
@@ -40,23 +51,26 @@ def extract_root_domain(domain):
         return '.'.join(parts[-2:])
     return domain
 
-@st.cache_data(ttl=300)
-def fetch_logs(api_key, profile_id, limit=1000):
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_logs_by_time(api_key, profile_id, from_date, to_date=None):
     headers = {'X-Api-Key': api_key}
     base_url = f'https://api.nextdns.io/profiles/{profile_id}/logs'
     
     all_logs = []
     cursor = None
-    fetched = 0
+    max_logs = 50000
     
-    while fetched < limit:
-        batch_size = min(500, limit - fetched)
-        params = {'limit': batch_size}
+    while len(all_logs) < max_logs:
+        params = {'limit': 500}
+        if from_date:
+            params['from'] = from_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+        if to_date:
+            params['to'] = to_date.strftime('%Y-%m-%dT%H:%M:%SZ')
         if cursor:
             params['cursor'] = cursor
         
         try:
-            response = requests.get(base_url, headers=headers, params=params, timeout=30)
+            response = requests.get(base_url, headers=headers, params=params, timeout=60)
             if response.status_code == 401:
                 return None, "Invalid API Key"
             elif response.status_code == 404:
@@ -72,9 +86,6 @@ def fetch_logs(api_key, profile_id, limit=1000):
                         try:
                             log_entry = json.loads(line)
                             all_logs.append(log_entry)
-                            fetched += 1
-                            if fetched >= limit:
-                                break
                         except json.JSONDecodeError:
                             continue
                 break
@@ -86,7 +97,6 @@ def fetch_logs(api_key, profile_id, limit=1000):
                 
                 if isinstance(data, list):
                     all_logs.extend(data)
-                    fetched += len(data)
                     break
                 elif isinstance(data, dict):
                     logs = data.get('data', [])
@@ -94,7 +104,6 @@ def fetch_logs(api_key, profile_id, limit=1000):
                         break
                     
                     all_logs.extend(logs)
-                    fetched += len(logs)
                     
                     meta = data.get('meta', {})
                     pagination = meta.get('pagination', {})
@@ -106,7 +115,7 @@ def fetch_logs(api_key, profile_id, limit=1000):
                     return None, "Unexpected API response format"
                 
         except requests.exceptions.Timeout:
-            return None, "Request timeout"
+            return None, "Request timeout - try a shorter time range"
         except requests.exceptions.RequestException as e:
             return None, f"Connection error: {str(e)}"
     
@@ -196,6 +205,17 @@ def process_logs(logs, timezone_str='Europe/Berlin'):
     
     return df
 
+def filter_by_time(df, time_filter):
+    if time_filter == 'All Data' or 'timestamp' not in df.columns:
+        return df
+    
+    if time_filter in TIME_RANGES:
+        cutoff = datetime.now(pytz.UTC) - TIME_RANGES[time_filter]
+        mask = df['timestamp'] >= cutoff
+        return df[mask]
+    
+    return df
+
 with st.sidebar:
     st.title("🔒 NextDNS Analytics")
     st.markdown("---")
@@ -206,8 +226,13 @@ with st.sidebar:
     
     st.markdown("---")
     
-    st.subheader("Settings")
-    log_limit = st.selectbox("Logs to fetch", [1000, 2000, 5000, 10000], index=0)
+    st.subheader("Data Settings")
+    time_range = st.selectbox(
+        "Time Range to Fetch",
+        list(TIME_RANGES.keys()),
+        index=3,
+        help="Select how far back to fetch logs"
+    )
     timezone = st.selectbox("Timezone", ['Europe/Berlin', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Tokyo', 'UTC'], index=0)
     
     st.markdown("---")
@@ -222,19 +247,23 @@ if 'logs_data' not in st.session_state:
     st.session_state.logs_data = None
 if 'error' not in st.session_state:
     st.session_state.error = None
+if 'fetch_time_range' not in st.session_state:
+    st.session_state.fetch_time_range = None
 
 if fetch_button:
     if not api_key or not profile_id:
         st.error("Please enter both API Key and Profile ID")
     else:
-        with st.spinner("Fetching data from NextDNS..."):
-            logs, error = fetch_logs(api_key, profile_id, log_limit)
+        with st.spinner(f"Fetching logs for {time_range}..."):
+            from_date = datetime.now(pytz.UTC) - TIME_RANGES[time_range]
+            logs, error = fetch_logs_by_time(api_key, profile_id, from_date)
             if error:
                 st.session_state.error = error
                 st.session_state.logs_data = None
             else:
                 st.session_state.logs_data = logs
                 st.session_state.error = None
+                st.session_state.fetch_time_range = time_range
 
 if st.session_state.error:
     st.error(f"Error: {st.session_state.error}")
@@ -259,17 +288,46 @@ if not st.session_state.logs_data:
     **Get Started:**
     1. Enter your **API Key** (find it at [my.nextdns.io/account](https://my.nextdns.io/account))
     2. Enter your **Profile ID**
-    3. Click **Fetch Data**
+    3. Select a **Time Range**
+    4. Click **Fetch Data**
     """)
     st.stop()
 
-df = process_logs(st.session_state.logs_data, timezone)
+df_full = process_logs(st.session_state.logs_data, timezone)
 
-if df.empty:
+if df_full.empty:
     st.warning("No log data available")
     st.stop()
 
 st.title("🔒 NextDNS Advanced Analytics")
+
+st.markdown("### 🕐 Filter by Time")
+filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 2])
+
+with filter_col1:
+    display_time_filter = st.selectbox(
+        "Display Time Range",
+        ['All Data'] + list(TIME_RANGES.keys()),
+        index=0,
+        help="Filter the displayed data by time"
+    )
+
+df = filter_by_time(df_full, display_time_filter)
+
+if df.empty:
+    st.warning("No data for the selected time range")
+    st.stop()
+
+with filter_col2:
+    if 'timestamp' in df.columns and not df['timestamp'].isna().all():
+        min_time = df['timestamp'].min()
+        max_time = df['timestamp'].max()
+        st.metric("Data Range", f"{min_time.strftime('%d.%m %H:%M')} - {max_time.strftime('%d.%m %H:%M')}")
+
+with filter_col3:
+    st.metric("Filtered Logs", f"{len(df):,} of {len(df_full):,}")
+
+st.markdown("---")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -297,9 +355,22 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Time Analysis", "🔥 Heatmap", "�
 with tab1:
     st.subheader("Query Volume Over Time")
     
-    if 'timestamp' in df.columns:
+    if 'timestamp' in df.columns and not df['timestamp'].isna().all():
         df_time = df.copy()
-        df_time['time_bucket'] = df_time['timestamp'].dt.floor('H')
+        
+        time_diff = df_time['timestamp'].max() - df_time['timestamp'].min()
+        if time_diff <= timedelta(hours=6):
+            bucket = '5min'
+            df_time['time_bucket'] = df_time['timestamp'].dt.floor('5min')
+        elif time_diff <= timedelta(days=1):
+            bucket = '15min'
+            df_time['time_bucket'] = df_time['timestamp'].dt.floor('15min')
+        elif time_diff <= timedelta(days=3):
+            bucket = 'H'
+            df_time['time_bucket'] = df_time['timestamp'].dt.floor('H')
+        else:
+            bucket = '3H'
+            df_time['time_bucket'] = df_time['timestamp'].dt.floor('3H')
         
         time_series = df_time.groupby(['time_bucket', 'is_blocked']).size().reset_index(name='count')
         
@@ -324,16 +395,19 @@ with tab1:
         with col1:
             st.subheader("Top Allowed Domains")
             allowed_domains = df[df['is_blocked'] == 'Allowed']['root_domain'].value_counts().head(10)
-            fig_allowed = px.bar(
-                x=allowed_domains.values,
-                y=allowed_domains.index,
-                orientation='h',
-                color_discrete_sequence=['#22c55e']
-            )
-            fig_allowed.update_layout(template='plotly_dark', yaxis={'categoryorder': 'total ascending'}, showlegend=False)
-            fig_allowed.update_xaxes(title='Queries')
-            fig_allowed.update_yaxes(title='')
-            st.plotly_chart(fig_allowed, use_container_width=True)
+            if len(allowed_domains) > 0:
+                fig_allowed = px.bar(
+                    x=allowed_domains.values,
+                    y=allowed_domains.index,
+                    orientation='h',
+                    color_discrete_sequence=['#22c55e']
+                )
+                fig_allowed.update_layout(template='plotly_dark', yaxis={'categoryorder': 'total ascending'}, showlegend=False)
+                fig_allowed.update_xaxes(title='Queries')
+                fig_allowed.update_yaxes(title='')
+                st.plotly_chart(fig_allowed, use_container_width=True)
+            else:
+                st.info("No allowed queries found")
         
         with col2:
             st.subheader("Top Blocked Domains")
@@ -351,6 +425,8 @@ with tab1:
                 st.plotly_chart(fig_blocked, use_container_width=True)
             else:
                 st.info("No blocked queries found")
+    else:
+        st.warning("No timestamp data available for time analysis")
 
 with tab2:
     st.subheader("Activity Heatmap")
@@ -393,6 +469,8 @@ with tab2:
             daily_counts = df.groupby('day_of_week').size().reindex(day_order).dropna().sort_values(ascending=False).head(5)
             for day, count in daily_counts.items():
                 st.write(f"**{day}** - {int(count):,} queries")
+    else:
+        st.warning("No time data available for heatmap")
 
 with tab3:
     st.subheader("Device Forensics")
@@ -425,13 +503,16 @@ with tab3:
         with col1:
             st.subheader("Top Domains")
             top_domains = device_df['root_domain'].value_counts().head(10)
-            fig_domains = px.pie(
-                values=top_domains.values,
-                names=top_domains.index,
-                hole=0.4
-            )
-            fig_domains.update_layout(template='plotly_dark')
-            st.plotly_chart(fig_domains, use_container_width=True)
+            if len(top_domains) > 0:
+                fig_domains = px.pie(
+                    values=top_domains.values,
+                    names=top_domains.index,
+                    hole=0.4
+                )
+                fig_domains.update_layout(template='plotly_dark')
+                st.plotly_chart(fig_domains, use_container_width=True)
+            else:
+                st.info("No domain data")
         
         with col2:
             st.subheader("Blocked Domains")
@@ -454,14 +535,15 @@ with tab3:
         if 'protocol' in device_df.columns:
             st.subheader("Protocol Distribution")
             protocol_counts = device_df['protocol'].value_counts()
-            fig_protocol = px.pie(
-                values=protocol_counts.values,
-                names=protocol_counts.index,
-                hole=0.4,
-                color_discrete_sequence=px.colors.qualitative.Set2
-            )
-            fig_protocol.update_layout(template='plotly_dark')
-            st.plotly_chart(fig_protocol, use_container_width=True)
+            if len(protocol_counts) > 0:
+                fig_protocol = px.pie(
+                    values=protocol_counts.values,
+                    names=protocol_counts.index,
+                    hole=0.4,
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                fig_protocol.update_layout(template='plotly_dark')
+                st.plotly_chart(fig_protocol, use_container_width=True)
     else:
         st.info("No data for selected device")
 
@@ -469,88 +551,91 @@ with tab4:
     st.subheader("GAFAM & Big Tech Analysis")
     st.markdown("Breakdown of requests to major tech companies")
     
-    gafam_counts = df['gafam'].value_counts()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig_gafam_pie = px.pie(
-            values=gafam_counts.values,
-            names=gafam_counts.index,
-            title='Request Distribution by Company',
-            hole=0.4,
-            color_discrete_map={
-                'Google': '#4285F4',
-                'Apple': '#A2AAAD',
-                'Meta': '#0668E1',
-                'Amazon': '#FF9900',
-                'Microsoft': '#00A4EF',
-                'Others': '#6B7280'
-            }
-        )
-        fig_gafam_pie.update_layout(template='plotly_dark')
-        st.plotly_chart(fig_gafam_pie, use_container_width=True)
-    
-    with col2:
-        fig_gafam_bar = px.bar(
-            x=gafam_counts.index,
-            y=gafam_counts.values,
-            title='Total Requests by Company',
-            color=gafam_counts.index,
-            color_discrete_map={
-                'Google': '#4285F4',
-                'Apple': '#A2AAAD',
-                'Meta': '#0668E1',
-                'Amazon': '#FF9900',
-                'Microsoft': '#00A4EF',
-                'Others': '#6B7280'
-            }
-        )
-        fig_gafam_bar.update_layout(template='plotly_dark', showlegend=False)
-        fig_gafam_bar.update_xaxes(title='Company')
-        fig_gafam_bar.update_yaxes(title='Queries')
-        st.plotly_chart(fig_gafam_bar, use_container_width=True)
-    
-    if 'timestamp' in df.columns:
-        st.subheader("GAFAM Requests Over Time")
-        df_gafam_time = df.copy()
-        df_gafam_time['time_bucket'] = df_gafam_time['timestamp'].dt.floor('H')
+    if 'gafam' in df.columns:
+        gafam_counts = df['gafam'].value_counts()
         
-        gafam_time_series = df_gafam_time.groupby(['time_bucket', 'gafam']).size().reset_index(name='count')
+        col1, col2 = st.columns(2)
         
-        fig_gafam_time = px.area(
-            gafam_time_series,
-            x='time_bucket',
-            y='count',
-            color='gafam',
-            color_discrete_map={
-                'Google': '#4285F4',
-                'Apple': '#A2AAAD',
-                'Meta': '#0668E1',
-                'Amazon': '#FF9900',
-                'Microsoft': '#00A4EF',
-                'Others': '#6B7280'
-            }
-        )
-        fig_gafam_time.update_layout(
-            template='plotly_dark',
-            hovermode='x unified',
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
-        )
-        st.plotly_chart(fig_gafam_time, use_container_width=True)
-    
-    st.subheader("Top Domains by Company")
-    for company in ['Google', 'Apple', 'Meta', 'Amazon', 'Microsoft']:
-        with st.expander(f"{company}"):
-            company_domains = df[df['gafam'] == company]['root_domain'].value_counts().head(10)
-            if len(company_domains) > 0:
-                display_data = pd.DataFrame({
-                    'Domain': company_domains.index,
-                    'Queries': company_domains.values
-                })
-                st.dataframe(display_data, use_container_width=True)
-            else:
-                st.info(f"No {company} requests found")
+        with col1:
+            fig_gafam_pie = px.pie(
+                values=gafam_counts.values,
+                names=gafam_counts.index,
+                title='Request Distribution by Company',
+                hole=0.4,
+                color_discrete_map={
+                    'Google': '#4285F4',
+                    'Apple': '#A2AAAD',
+                    'Meta': '#0668E1',
+                    'Amazon': '#FF9900',
+                    'Microsoft': '#00A4EF',
+                    'Others': '#6B7280'
+                }
+            )
+            fig_gafam_pie.update_layout(template='plotly_dark')
+            st.plotly_chart(fig_gafam_pie, use_container_width=True)
+        
+        with col2:
+            fig_gafam_bar = px.bar(
+                x=gafam_counts.index,
+                y=gafam_counts.values,
+                title='Total Requests by Company',
+                color=gafam_counts.index,
+                color_discrete_map={
+                    'Google': '#4285F4',
+                    'Apple': '#A2AAAD',
+                    'Meta': '#0668E1',
+                    'Amazon': '#FF9900',
+                    'Microsoft': '#00A4EF',
+                    'Others': '#6B7280'
+                }
+            )
+            fig_gafam_bar.update_layout(template='plotly_dark', showlegend=False)
+            fig_gafam_bar.update_xaxes(title='Company')
+            fig_gafam_bar.update_yaxes(title='Queries')
+            st.plotly_chart(fig_gafam_bar, use_container_width=True)
+        
+        if 'timestamp' in df.columns and not df['timestamp'].isna().all():
+            st.subheader("GAFAM Requests Over Time")
+            df_gafam_time = df.copy()
+            df_gafam_time['time_bucket'] = df_gafam_time['timestamp'].dt.floor('H')
+            
+            gafam_time_series = df_gafam_time.groupby(['time_bucket', 'gafam']).size().reset_index(name='count')
+            
+            fig_gafam_time = px.area(
+                gafam_time_series,
+                x='time_bucket',
+                y='count',
+                color='gafam',
+                color_discrete_map={
+                    'Google': '#4285F4',
+                    'Apple': '#A2AAAD',
+                    'Meta': '#0668E1',
+                    'Amazon': '#FF9900',
+                    'Microsoft': '#00A4EF',
+                    'Others': '#6B7280'
+                }
+            )
+            fig_gafam_time.update_layout(
+                template='plotly_dark',
+                hovermode='x unified',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+            )
+            st.plotly_chart(fig_gafam_time, use_container_width=True)
+        
+        st.subheader("Top Domains by Company")
+        for company in ['Google', 'Apple', 'Meta', 'Amazon', 'Microsoft']:
+            with st.expander(f"{company}"):
+                company_domains = df[df['gafam'] == company]['root_domain'].value_counts().head(10)
+                if len(company_domains) > 0:
+                    display_data = pd.DataFrame({
+                        'Domain': company_domains.index,
+                        'Queries': company_domains.values
+                    })
+                    st.dataframe(display_data, use_container_width=True)
+                else:
+                    st.info(f"No {company} requests found")
+    else:
+        st.warning("No GAFAM data available")
 
 with tab5:
     st.subheader("Interactive Log Explorer")
